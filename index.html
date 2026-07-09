@@ -196,6 +196,23 @@
   .score-card .t{font-size:.6rem; text-transform:uppercase; letter-spacing:1.3px; opacity:.75; margin-top:4px; font-weight:700}
   .rank-line{font-size:.94rem; margin-top:12px; line-height:1.5}
   .rank-line b{color:var(--gold-soft)}
+  /* ---------- Ranking Top 5 ---------- */
+  .rankboard{margin:16px auto 4px; max-width:440px; background:rgba(11,36,69,.55);
+       border:1.5px solid rgba(242,169,0,.4); border-radius:18px; padding:14px 16px 12px; text-align:left}
+  .rb-title{font-family:var(--display); font-weight:800; font-size:.92rem; color:var(--gold-soft);
+       text-align:center; letter-spacing:.4px; margin-bottom:10px}
+  .rb-row{display:flex; align-items:center; gap:10px; padding:7px 10px; border-radius:12px;
+       font-size:.86rem; font-weight:600}
+  .rb-row + .rb-row{margin-top:4px}
+  .rb-row .pos{font-family:var(--display); font-weight:800; width:30px; text-align:center; flex-shrink:0;
+       font-size:1rem}
+  .rb-row .nm{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .rb-row .pts{font-family:var(--display); font-weight:800; color:var(--gold-soft); flex-shrink:0}
+  .rb-row .pts small{font-family:var(--body); font-weight:600; font-size:.62rem; opacity:.7; margin-left:3px}
+  .rb-row.me{background:linear-gradient(90deg, rgba(242,169,0,.28), rgba(242,169,0,.10));
+       border:1.5px solid rgba(242,169,0,.75); box-shadow:0 0 14px rgba(242,169,0,.25)}
+  .rb-row.me .nm::after{content:" · VOCÊ ⭐"; color:var(--gold-soft); font-weight:800; font-size:.7rem}
+  .rb-empty{text-align:center; font-size:.8rem; opacity:.7; padding:6px 0}
   .gift{margin:16px auto 10px; max-width:440px; background:rgba(242,169,0,.12);
        border:1.5px dashed rgba(242,169,0,.75); border-radius:18px; padding:16px 18px 18px;
        display:flex; flex-direction:column; align-items:center; gap:8px;
@@ -257,9 +274,15 @@
           <label>Nome completo *</label>
           <input id="inNome" maxlength="60" placeholder="Ex.: Maria Oliveira da Silva" autocomplete="name">
         </div>
-        <div class="field" id="fZap">
-          <label>WhatsApp *</label>
-          <input id="inZap" inputmode="tel" maxlength="16" placeholder="(69) 99999-9999" autocomplete="tel">
+        <div class="row2">
+          <div class="field" id="fZap">
+            <label>WhatsApp *</label>
+            <input id="inZap" inputmode="tel" maxlength="16" placeholder="(69) 99999-9999" autocomplete="tel">
+          </div>
+          <div class="field" id="fIdade">
+            <label>Idade *</label>
+            <input id="inIdade" inputmode="numeric" maxlength="3" placeholder="Ex.: 17">
+          </div>
         </div>
         <div class="row2">
           <div class="field" id="fC1">
@@ -372,6 +395,10 @@
         <div class="score-card"><div class="n" id="winAcc">0%</div><div class="t">Acertos</div></div>
       </div>
       <p class="rank-line" id="winRank"></p>
+      <div class="rankboard" id="rankboard">
+        <div class="rb-title">🏅 Top 5 · Melhores Exploradores do Stand</div>
+        <div id="rbList"></div>
+      </div>
       <div class="gift">
         <div class="gift-ico">🎁</div>
         <div class="gift-tx">
@@ -510,7 +537,7 @@ function sendLead(status){
   if(!lead) return;
   const rec = {
     datahora: new Date().toLocaleString('pt-BR'),
-    nome: lead.nome, whatsapp: lead.zap,
+    nome: lead.nome, whatsapp: lead.zap, idade: lead.idade,
     curso1: lead.c1, curso2: lead.c2,
     personagem: lead.char==='F' ? 'Jovem Exploradora' : 'Jovem Explorador',
     pontuacao: String(score||0), acertos: String(correctCount||0)+"/"+TOTAL,
@@ -528,11 +555,60 @@ function sendLead(status){
 window.addEventListener('keydown', e=>{
   if(e.ctrlKey && e.shiftKey && e.code==='KeyE'){
     if(!sessionLeads.length) return;
-    const head = "Data/Hora;Nome Completo;WhatsApp;1º Curso;2º Curso;Personagem;Pontuação;Acertos;Status\n";
-    const rows = sessionLeads.map(r=>[r.datahora,r.nome,r.whatsapp,r.curso1,r.curso2,r.personagem,r.pontuacao,r.acertos,r.status].join(';')).join('\n');
+    const head = "Data/Hora;Nome Completo;WhatsApp;Idade;1º Curso;2º Curso;Personagem;Pontuação;Acertos;Status\n";
+    const rows = sessionLeads.map(r=>[r.datahora,r.nome,r.whatsapp,r.idade,r.curso1,r.curso2,r.personagem,r.pontuacao,r.acertos,r.status].join(';')).join('\n');
     const blob = new Blob(["\ufeff"+head+rows], {type:'text/csv;charset=utf-8'});
     const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
     a.download='leads-trilha-da-fisioterapia.csv'; a.click();
+  }
+});
+
+/* ---------- Ranking Top 5 (persiste no navegador do stand) ----------
+   Salvo em localStorage; se o navegador bloquear, funciona só na sessão.
+   Atalho Ctrl+Shift+R NÃO é usado (é recarregar) — para zerar o ranking
+   entre eventos, use o atalho Ctrl+Shift+L.                            */
+const RANK_KEY='trilhaFisioTop5';
+let memRanking=[];   // fallback em memória
+function loadRanking(){
+  try{
+    const raw = localStorage.getItem(RANK_KEY);
+    if(raw){ const arr = JSON.parse(raw); if(Array.isArray(arr)) return arr; }
+  }catch(e){}
+  return memRanking.slice();
+}
+function saveRanking(arr){
+  memRanking = arr.slice();
+  try{ localStorage.setItem(RANK_KEY, JSON.stringify(arr)); }catch(e){}
+}
+function addToRanking(nome, pts, acc){
+  const arr = loadRanking();
+  const entry = { nome:nome, pts:pts, acc:acc, t:Date.now() };
+  arr.push(entry);
+  arr.sort((a,b)=> b.pts - a.pts || b.acc - a.acc || a.t - b.t);
+  const top = arr.slice(0,5);
+  saveRanking(top);
+  return { top, entry };
+}
+function renderRanking(top, current){
+  const list = document.getElementById('rbList');
+  if(!top.length){ list.innerHTML = '<div class="rb-empty">Seja o primeiro do placar! 🏁</div>'; return; }
+  const medals = ['🥇','🥈','🥉','4º','5º'];
+  list.innerHTML = top.map((r,i)=>{
+    const first = (r.nome||'Explorador').split(' ')[0];
+    const isMe = current && r.t===current.t;
+    return '<div class="rb-row'+(isMe?' me':'')+'">'
+         + '<span class="pos">'+medals[i]+'</span>'
+         + '<span class="nm">'+first+'</span>'
+         + '<span class="pts">'+r.pts+'<small>pts · '+r.acc+'%</small></span>'
+         + '</div>';
+  }).join('');
+}
+/* Zerar o placar entre eventos: Ctrl+Shift+L */
+window.addEventListener('keydown', e=>{
+  if(e.ctrlKey && e.shiftKey && e.code==='KeyL'){
+    saveRanking([]);
+    const list=document.getElementById('rbList');
+    if(list) list.innerHTML='<div class="rb-empty">Placar zerado. Seja o primeiro! 🏁</div>';
   }
 });
 
@@ -803,6 +879,8 @@ function winGame(){
   else if(acc>=50){ rank="Desbravador(a)"; msg="já enxerga o mapa com clareza"; }
   else { rank="Aventureiro(a) Iniciante"; msg="começou uma grande jornada"; }
   document.getElementById('winRank').innerHTML = "Título conquistado: <b>"+rank+"</b> — quem "+msg+".";
+  const rr = addToRanking(lead ? lead.nome : 'Explorador(a)', score, acc);
+  renderRanking(rr.top, rr.entry);
   sendLead("Concluiu — Troféu 🏆");
   launchConfetti();
   document.getElementById('win').classList.add('on');
@@ -1344,6 +1422,11 @@ function validateForm(){
   mark('fZap', !zapOk);
   if(!zapOk && !err) err = 'Digite um WhatsApp válido com DDD. Ex.: (69) 99999-9999';
 
+  const idadeN = parseInt(document.getElementById('inIdade').value, 10);
+  const idadeOk = !isNaN(idadeN) && idadeN>=5 && idadeN<=110;
+  mark('fIdade', !idadeOk);
+  if(!idadeOk && !err) err = 'Informe sua idade (entre 5 e 110 anos).';
+
   mark('fC1', !c1);
   if(!c1 && !err) err = 'Escolha seu 1º curso de interesse.';
 
@@ -1354,7 +1437,7 @@ function validateForm(){
 
   if(err){ msg.textContent = '⚠️ '+err; msg.classList.add('show'); return null; }
   msg.classList.remove('show');
-  return { nome, zap: document.getElementById('inZap').value, c1, c2, char:selectedChar };
+  return { nome, zap: document.getElementById('inZap').value, idade: String(idadeN), c1, c2, char:selectedChar };
 }
 
 /* ---------- Botões ---------- */
@@ -1382,9 +1465,14 @@ document.getElementById('playAgain').onclick=()=>{
   // limpa o formulário para o próximo visitante do stand
   document.getElementById('inNome').value='';
   document.getElementById('inZap').value='';
+  document.getElementById('inIdade').value='';
   document.getElementById('inC1').value='';
   document.getElementById('inC2').value='';
 };
+/* idade: aceita só números */
+document.getElementById('inIdade').addEventListener('input', e=>{
+  e.target.value = e.target.value.replace(/\D/g,'').slice(0,3);
+});
 
 document.getElementById('muteBtn').onclick=()=>{ muted=!muted; document.getElementById('muteBtn').textContent=muted?'🔇':'🔊'; };
 
